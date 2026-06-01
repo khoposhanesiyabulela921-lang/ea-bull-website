@@ -1,0 +1,72 @@
+version: '3.8'
+
+services:
+  postgres:
+    image: postgres:15-alpine
+    container_name: titan_postgres
+    environment:
+      POSTGRES_USER: ${DB_USER:-titan_admin}
+      POSTGRES_PASSWORD: ${DB_PASSWORD:-titan_secure_password_123}
+      POSTGRES_DB: ${DB_NAME:-titan_trading}
+    ports:
+      - "5432:5432"
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ${DB_USER:-titan_admin}"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+    networks:
+      - titan_network
+
+  backend:
+    build:
+      context: ../backend
+      dockerfile: ../docker/Dockerfile.backend
+    container_name: titan_backend
+    environment:
+      NODE_ENV: development
+      PORT: 3000
+      DB_HOST: postgres
+      DB_PORT: 5432
+      DB_NAME: ${DB_NAME:-titan_trading}
+      DB_USER: ${DB_USER:-titan_admin}
+      DB_PASSWORD: ${DB_PASSWORD:-titan_secure_password_123}
+      JWT_SECRET: ${JWT_SECRET:-your_secret_key_here}
+      API_URL: http://localhost:3000
+      FRONTEND_URL: http://localhost:3001
+    ports:
+      - "3000:3000"
+    depends_on:
+      postgres:
+        condition: service_healthy
+    volumes:
+      - ../backend/src:/app/src
+      - ../backend/logs:/app/logs
+    networks:
+      - titan_network
+
+  ai_service:
+    build:
+      context: ../ai-service
+      dockerfile: ../docker/Dockerfile.ai
+    container_name: titan_ai_service
+    environment:
+      FLASK_ENV: development
+      API_URL: http://backend:3000
+    ports:
+      - "5000:5000"
+    depends_on:
+      - backend
+    volumes:
+      - ../ai-service:/app
+    networks:
+      - titan_network
+
+volumes:
+  postgres_data:
+
+networks:
+  titan_network:
+    driver: bridge
